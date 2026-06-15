@@ -1,84 +1,88 @@
+# -*- coding: utf-8 -*-
 import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QMessageBox
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.pyplot as plt
-import finance
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QLabel, QLineEdit, QPushButton,
+    QVBoxLayout, QMessageBox, QTableWidget, QTableWidgetItem
+)
+from PyQt5.QtCore import QDate, QTimer
+from db import add_expense, get_expenses, get_balance
 
-class FinanceApp(QWidget):
+class ExpenseApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.canvas = None
-        self.menu_visible = False
         self.initUI()
 
     def initUI(self):
         self.setWindowTitle("Фінансовий проєкт")
 
-        # головний горизонтальний layout
-        self.main_layout = QHBoxLayout(self)
+        # Поля вводу
+        self.category_label = QLabel("Категорія:")
+        self.category_input = QLineEdit()
 
-        # бокове меню (зліва)
-        self.side_menu = QFrame()
-        self.side_menu.setFixedWidth(200)
-        menu_layout = QVBoxLayout()
+        self.amount_label = QLabel("Сума:")
+        self.amount_input = QLineEdit()
 
-        btn_balance = QPushButton("Баланс")
-        btn_balance.clicked.connect(self.show_balance)
-        menu_layout.addWidget(btn_balance)
+        self.date_label = QLabel("Дата (YYYY-MM-DD):")
+        self.date_input = QLineEdit()
+        self.date_input.setText(QDate.currentDate().toString("yyyy-MM-dd"))
 
-        btn_top = QPushButton("Топ витрат")
-        btn_top.clicked.connect(self.show_top_expenses)
-        menu_layout.addWidget(btn_top)
+        # Кнопка для додавання витрати
+        self.save_button = QPushButton("Зберегти витрату")
+        self.save_button.clicked.connect(self.save_expense)
 
-        btn_chart = QPushButton("Графік")
-        btn_chart.clicked.connect(self.toggle_chart)
-        menu_layout.addWidget(btn_chart)
+        # Таблиця для витрат
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["ID", "Категорія", "Сума", "Дата"])
 
-        self.side_menu.setLayout(menu_layout)
-        self.side_menu.hide()  # приховане на старті
+        # Кнопка для показу балансу
+        self.balance_button = QPushButton("Показати баланс")
+        self.balance_button.clicked.connect(self.show_balance)
 
-        # контентна область (справа)
-        self.content_layout = QVBoxLayout()
-        self.toggle_btn = QPushButton("≡ Меню")
-        self.toggle_btn.clicked.connect(self.toggle_menu)
-        self.content_layout.addWidget(self.toggle_btn)
+        # Layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.category_label)
+        layout.addWidget(self.category_input)
+        layout.addWidget(self.amount_label)
+        layout.addWidget(self.amount_input)
+        layout.addWidget(self.date_label)
+        layout.addWidget(self.date_input)
+        layout.addWidget(self.save_button)
+        layout.addWidget(self.balance_button)
+        layout.addWidget(self.table)
 
-        # додаємо меню зліва, контент справа
-        self.main_layout.addWidget(self.side_menu)       # лівий край
-        self.main_layout.addLayout(self.content_layout)  # решта простору
+        self.setLayout(layout)
+        self.resize(500, 400)
 
-        self.resize(1024, 768)
+        # Таймер для автооновлення таблиці
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.show_expenses)
+        self.timer.start(2000)  # кожні 2 секунди
 
-    def toggle_menu(self):
-        if self.menu_visible:
-            self.side_menu.hide()
-            self.menu_visible = False
-        else:
-            self.side_menu.show()
-            self.menu_visible = True
+    def save_expense(self):
+        try:
+            category = self.category_input.text()
+            amount = float(self.amount_input.text())
+            date = self.date_input.text()
+            add_expense(category, amount, date)
+            QMessageBox.information(self, "Успіх", "Витрата збережена!")
+            self.show_expenses()  # одразу оновлюємо таблицю
+        except Exception as e:
+            QMessageBox.critical(self, "Помилка", str(e))
+
+    def show_expenses(self):
+        data = get_expenses()
+        self.table.setRowCount(len(data))
+        for row_idx, row_data in enumerate(data):
+            for col_idx, value in enumerate(row_data):
+                self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
 
     def show_balance(self):
-        balance = finance.get_balance()
-        QMessageBox.information(self, "Баланс", f"Баланс: {balance:.2f}")
-
-    def show_top_expenses(self):
-        top_expenses = finance.get_top_expenses()
-        QMessageBox.information(self, "Топ витрат", str(top_expenses))
-
-    def toggle_chart(self):
-        if self.canvas is None:
-            fig, ax = plt.subplots()
-            finance.get_expenses_by_category().plot(kind='bar', ax=ax)
-            ax.set_title("Витрати по категоріях")
-            self.canvas = FigureCanvas(fig)
-            self.content_layout.addWidget(self.canvas)
-        else:
-            self.content_layout.removeWidget(self.canvas)
-            self.canvas.setParent(None)
-            self.canvas = None
+        balance = get_balance()
+        QMessageBox.information(self, "Баланс", f"Поточний баланс: {balance}")
 
 def run_app():
     app = QApplication(sys.argv)
-    window = FinanceApp()
+    window = ExpenseApp()
     window.show()
     sys.exit(app.exec_())
